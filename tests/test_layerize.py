@@ -268,7 +268,9 @@ def test_studio_flow():
         ids = st.process(img)
         assert len(ids) == 4 and st.auto_ids() == ids
         assert all(a.shape == (160, 160, 3) for a, _ in st.gallery(ids))
-        psd_path, zip_path = st.export_full(True)
+        assert np.array_equal(st.full_image(), img)  # processed picture == the picture, layers inside
+        psd_path, zip_path = st.export_full(True, True, "psd"), st.export_full(True, True, "zip")
+        assert psd_path.endswith("full_image_with_layers.psd") and zip_path.endswith("separate_layers.zip")
         size, lays = read_psd_layers(open(psd_path, "rb").read())
         assert size == (200, 160) and len(lays) == 5
         names = zipfile.ZipFile(zip_path).namelist()
@@ -282,7 +284,7 @@ def test_studio_flow():
         rid = st.select(img, painted)
         assert st.manual_ids() == [rid]
         assert st.job.regions[rid].x0 >= 159 and st.cutout(rid).shape == (160, 200, 3)
-        psd_path, _ = st.export_manual(True)
+        psd_path = st.export_manual(True)
         _, lays = read_psd_layers(open(psd_path, "rb").read())
         assert len(lays) == 2  # background + the one element
         st.remove(rid)
