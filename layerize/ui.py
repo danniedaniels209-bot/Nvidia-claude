@@ -64,13 +64,13 @@ class Studio:
             fh.write(data)
         return path
 
-    def _export(self, ids: list[int], fill: bool, stem: str) -> list[str]:
+    def _export(self, ids: list[int], fill: bool, stem: str, exact: bool = False) -> list[str]:
         job = self._job()
         if not ids:
             raise ValueError("Nothing to export yet.")
         with self.lock:
-            psd, _ = job.export(ids, fill, "psd")
-            zipped, _ = job.export(ids, fill, "zip")
+            psd, _ = job.export(ids, fill, "psd", exact)
+            zipped, _ = job.export(ids, fill, "zip", exact)
         return [self._save(psd, f"{stem}.psd"), self._save(zipped, f"{stem}_png_layers.zip")]
 
     # ---- 1. full scan ------------------------------------------------------------------
@@ -87,11 +87,11 @@ class Studio:
         job = self._job()
         return [(job.thumb(i), f"#{i} {job.regions[i].label}") for i in ids if i in job.regions]
 
-    def export_full(self, fill: bool = True) -> list[str]:
+    def export_full(self, fill: bool = True, exact: bool = True) -> list[str]:
         ids = self.auto_ids()
         if not ids:
             raise ValueError("Press Process first.")
-        return self._export(ids, fill, "full_scan")
+        return self._export(ids, fill, "full_scan", exact)
 
     # ---- 2. manual selection -----------------------------------------------------------
     def select(self, image: np.ndarray, painted: np.ndarray) -> int:
@@ -112,11 +112,11 @@ class Studio:
     def remove(self, rid: int) -> None:
         self._job().regions.pop(rid, None)
 
-    def export_manual(self, fill: bool = True) -> list[str]:
+    def export_manual(self, fill: bool = True, exact: bool = False) -> list[str]:
         ids = self.manual_ids()
         if not ids:
             raise ValueError("Select at least one element first.")
-        return self._export(ids, fill, "selected")
+        return self._export(ids, fill, "selected", exact)
 
 
 def painted_mask(editor_value) -> np.ndarray:
@@ -156,6 +156,7 @@ def build_ui(studio: Studio):
                     with gr.Column(scale=2):
                         img_full = gr.Image(label="Image", type="numpy")
                         btn_process = gr.Button("Process", variant="primary")
+                        exact_full = gr.Checkbox(label="Keep the picture exactly as it is (all layers together = original)", value=True)
                         fill_full = gr.Checkbox(label="Fill in the background behind the elements", value=True)
                         btn_dl_full = gr.Button("Download (PSD + PNG layers)")
                         status_full = gr.Markdown("")
@@ -170,7 +171,7 @@ def build_ui(studio: Studio):
                     return studio.gallery(auto), f"Found **{len(auto)}** elements. Press Download."
 
                 btn_process.click(run(process), [img_full], [gal_full, status_full])
-                btn_dl_full.click(run(lambda f: studio.export_full(f)), [fill_full], [files_full])
+                btn_dl_full.click(run(lambda f, e: studio.export_full(f, e)), [fill_full, exact_full], [files_full])
 
             # ------------------------------------------------------------ 2. manual select
             with gr.Tab("2. Select an element (you choose)"):
@@ -190,7 +191,9 @@ def build_ui(studio: Studio):
                         last_cut = gr.Image(label="Last element cut out", interactive=False)
                         gal_sel = gr.Gallery(label="Your selected elements", columns=3, height=300,
                                              allow_preview=False, object_fit="contain")
-                fill_sel = gr.Checkbox(label="Fill in the background behind the elements", value=True)
+                with gr.Row():
+                    fill_sel = gr.Checkbox(label="Fill in the background behind the elements", value=True)
+                    exact_sel = gr.Checkbox(label="Keep original pixels (no edge clean-up)", value=False)
                 btn_dl_sel = gr.Button("Download (PSD + PNG layers)")
                 files_sel = gr.File(label="Your files", file_count="multiple")
 
@@ -211,7 +214,7 @@ def build_ui(studio: Studio):
 
                 btn_make.click(run(make), [editor], [last_cut, gal_sel, status_sel, editor])
                 btn_undo.click(run(undo), [], [gal_sel, status_sel])
-                btn_dl_sel.click(run(lambda f: studio.export_manual(f)), [fill_sel], [files_sel])
+                btn_dl_sel.click(run(lambda f, e: studio.export_manual(f, e)), [fill_sel, exact_sel], [files_sel])
     return demo
 
 

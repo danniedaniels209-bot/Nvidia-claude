@@ -308,6 +308,28 @@ def test_studio_flow():
             assert "Draw" in str(exc)
 
 
+def test_exact_export_reproduces_picture():
+    from layerize.core import composite
+    from layerize.pipeline import Job
+
+    img = np.asarray(make_image())
+    job = Job(img, ToyEngines(), "t")
+    job.analyse()
+    job.status = "ready"
+    ids = list(job.regions)
+    # all layers together over the untouched picture == the picture, pixel for pixel
+    layers = [job.layer(i, exact=True) for i in ids]
+    assert np.array_equal(composite(img, layers), img)
+    data, _ = job.export(ids, False, "psd", exact=True)
+    _, lays = read_psd_layers(data)
+    assert len(lays) == len(ids) + 1
+    assert np.array_equal(composite(img, [psd.Layer(l["name"], l["rgba"], l["bbox"][0], l["bbox"][1]) for l in lays[1:]]), img)
+    # non-exact layers differ from the picture only along soft edges
+    loose = [job.layer(i, exact=False) for i in ids]
+    diff = np.abs(composite(img, loose).astype(int) - img.astype(int)).max(axis=2) > 8
+    assert diff.mean() < 0.05
+
+
 def test_make_layer_empty():
     assert make_layer(np.zeros((4, 4, 3), np.uint8), np.zeros((4, 4), np.float32), "x") is None
 

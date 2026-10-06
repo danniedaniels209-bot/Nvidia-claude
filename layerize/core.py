@@ -87,8 +87,11 @@ def estimate_foreground(rgb: np.ndarray, alpha: np.ndarray, r1: int = 45, r2: in
     return (fg * 255.0 + 0.5).astype(np.uint8)
 
 
-def make_layer(rgb: np.ndarray, alpha: np.ndarray, name: str) -> Layer | None:
-    """Crop to the alpha's bounding box and decontaminate edge colours."""
+def make_layer(rgb: np.ndarray, alpha: np.ndarray, name: str, decontaminate: bool = True) -> Layer | None:
+    """Crop to the alpha's bounding box; optionally decontaminate edge colours.
+
+    decontaminate=False keeps the picture's own pixels, so the stacked layers reproduce it exactly.
+    """
     a8 = np.clip(alpha * 255.0 + 0.5, 0, 255).astype(np.uint8)
     ys, xs = np.nonzero(a8 > ALPHA_CUTOFF)
     if ys.size == 0:
@@ -97,7 +100,7 @@ def make_layer(rgb: np.ndarray, alpha: np.ndarray, name: str) -> Layer | None:
     a_crop = alpha[y0:y1, x0:x1]
     a8_crop = a8[y0:y1, x0:x1].copy()
     a8_crop[a8_crop <= ALPHA_CUTOFF] = 0
-    fg = estimate_foreground(rgb[y0:y1, x0:x1], a_crop)
+    fg = estimate_foreground(rgb[y0:y1, x0:x1], a_crop) if decontaminate else rgb[y0:y1, x0:x1]
     return Layer(name, np.dstack([fg, a8_crop]), int(x0), int(y0))
 
 

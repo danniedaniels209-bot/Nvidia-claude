@@ -83,7 +83,7 @@ class Job:
         self.status = "processing"
         self.error: str | None = None
         self._next_id = 1
-        self._layers: dict[tuple[int, bool], Layer] = {}
+        self._layers: dict[tuple[int, bool, bool], Layer] = {}
         self._embeds: dict[int, np.ndarray] = {}
         self.analysed = False
 
@@ -176,8 +176,9 @@ class Job:
         reg = self.regions[rid]
         return f"{rid:03d}_{_safe(reg.label or 'region')}"
 
-    def layer(self, rid: int, matte: bool = True) -> Layer:
-        key = (rid, matte)
+    def layer(self, rid: int, matte: bool = True, exact: bool = False) -> Layer:
+        """exact=True keeps original pixels (stack reproduces the picture); False cleans edge colours."""
+        key = (rid, matte, exact)
         if key not in self._layers:
             mask = self.full_mask(rid)
             alpha = None
@@ -188,7 +189,7 @@ class Job:
                     print(f"[layerize] matting failed for {rid}, using guided filter: {exc}")
             if alpha is None:
                 alpha = guided_alpha(self.image, mask)
-            lyr = make_layer(self.image, alpha, self.layer_name(rid))
+            lyr = make_layer(self.image, alpha, self.layer_name(rid), decontaminate=not exact)
             if lyr is None:
                 raise ValueError(f"region {rid} is empty after matting")
             self._layers[key] = lyr
@@ -255,18 +256,20 @@ class Job:
     def _ordered(self, ids: list[int]) -> list[int]:
         return sorted({i for i in ids if i in self.regions})  # id order == big/back -> small/front
 
-    def png(self, rid: int, matte: bool = True, canvas: bool = False) -> tuple[bytes, Layer]:
-        lyr = self.layer(rid, matte)
+    def png(self, rid: int, matte: bool = True, canvas: bool = False, exact: bool = False) -> tuple[bytes, Layer]:
+        lyr = self.layer(rid, matte, exact)
         arr = lyr.to_canvas(self.width, self.height) if canvas else lyr.rgba
         buf = io.BytesIO()
         Image.fromarray(arr, "RGBA").save(buf, "PNG")
         return buf.getvalue(), lyr
 
-    def export(self, ids: list[int], fill_background: bool = True, fmt: str = "psd") -> tuple[bytes, str]:
+    def export(self, ids: list[int], fill_background: bool = True, fmt: str = "psd",
+               exact: bool = False) -> tuple[bytes, str]:
+        """exact=True: all layers visible == the original picture, pixel for pixel (when not filling)."""
         ids = self._ordered(ids)
         if not ids:
             raise ValueError("no valid layer ids")
-        layers = [self.layer(i) for i in ids]
+        layers = [self.layer(i, exact=exact) for i in ids]
         bg_rgb = self.background(ids) if fill_background else self.image
         stack = [Layer("Background" if fill_background else "Original (flat)", np.dstack(
             [bg_rgb, np.full(bg_rgb.shape[:2], 255, np.uint8)]), 0, 0)] + layers
